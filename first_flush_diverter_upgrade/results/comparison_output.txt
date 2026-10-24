@@ -1,0 +1,105 @@
+
+====================================================================================================
+A. Sensor-noise sensitivity (no ground truth needed)
+====================================================================================================
+Inputs perturbed by log-normal noise: dry-spell sigma=10%, intensity sigma=30%.
+Metric: |multiplier(noisy input) - multiplier(clean input)| for the SAME controller,
+over 4000 operating points sampled across the training box.
+
+controller                    mean     p95     max
+Banded table (current)       0.021   0.100   0.550
+FLC width x0.5               0.021   0.100   0.366
+FLC width x1                 0.020   0.082   0.303
+FLC width x2                 0.018   0.063   0.209
+
+Worst multiplier change from a 1% input change straddling a band threshold:
+  banded table 0.400   |   FLC 0.014
+  -> saved ../results/noise_sensitivity.csv
+
+====================================================================================================
+B. Accuracy against the synthetic reference process
+====================================================================================================
+'predicted range' is the min/max multiplier each method emitted over all test points and seeds
+(a bounded range is a safety property: the flush can never be planned absurdly small or large).
+Trainable methods fit on 200 noisy labelled examples (label noise sigma=10%),
+mean over 10 training seeds. Test sets are noise-free. Errors are in multiplier units
+(1.00 = the reference 10-day / 5 mm/hr flush). Shortfall = under-diverting, Excess = over-diverting.
+
+--- reference preset 'washoff': Project's own baselines.py assumption: heavier rain washes clean in LESS depth.
+method                        in-dist MAE    OOD MAE  shortfall   excess   ~bytes  predicted range
+Fixed volume                  0.132±0.000      0.400      0.066    0.066        4  [1.00, 1.00]
+Banded table (current)        0.231±0.000      0.426      0.173    0.058       52  [0.70, 1.55]
+FLC (expert)                  0.225±0.000      0.427      0.169    0.057       68  [0.70, 1.55]
+FLC (data-tuned)              0.041±0.002      0.205      0.020    0.021       68  [0.71, 1.59]
+Poly ridge (deg 2)            0.013±0.004      0.179      0.004    0.009       44  [-0.50, 2.39]
+Decision tree (depth 5)       0.053±0.005      0.160      0.024    0.029      636  [0.61, 1.69]
+MLP (8-8)                     0.034±0.019      0.198      0.015    0.019      436  [-0.55, 3.49]
+Random forest (100)           0.039±0.003      0.144      0.018    0.021   131136  [0.61, 1.62]
+
+--- reference preset 'mobilisation': Table 2's assumption: heavier rain mobilises more load, needing MORE depth.
+method                        in-dist MAE    OOD MAE  shortfall   excess   ~bytes  predicted range
+Fixed volume                  0.107±0.000      0.233      0.022    0.086        4  [1.00, 1.00]
+Banded table (current)        0.094±0.000      0.134      0.072    0.022       52  [0.70, 1.55]
+FLC (expert)                  0.079±0.000      0.125      0.063    0.016       68  [0.70, 1.55]
+FLC (data-tuned)              0.029±0.002      0.099      0.012    0.017       68  [0.80, 1.52]
+Poly ridge (deg 2)            0.012±0.004      0.142      0.004    0.008       44  [0.22, 2.69]
+Decision tree (depth 5)       0.047±0.005      0.124      0.021    0.025      612  [0.71, 1.44]
+MLP (8-8)                     0.032±0.019      0.226      0.013    0.018      436  [-0.79, 3.28]
+Random forest (100)           0.036±0.002      0.107      0.016    0.020   130632  [0.69, 1.39]
+
+  -> saved ../results/accuracy_table.csv
+
+====================================================================================================
+C. Learning curve: in-distribution MAE vs number of labelled examples
+====================================================================================================
+--- preset 'washoff' (data-free: Fixed volume 0.132, Banded table (current) 0.231, FLC (expert) 0.225)
+     N FLC (data-tune Poly ridge (de Decision tree       MLP (8-8) Random forest 
+     8          0.117          0.646          0.132          0.296          0.094
+    15          0.097          0.137          0.098          0.217          0.070
+    30          0.074          0.051          0.079          0.226          0.061
+    60          0.052          0.029          0.077          0.125          0.052
+   120          0.045          0.019          0.060          0.061          0.040
+   250          0.039          0.013          0.048          0.021          0.038
+   500          0.037          0.010          0.037          0.013          0.035
+  1000          0.036          0.007          0.031          0.009          0.034
+
+--- preset 'mobilisation' (data-free: Fixed volume 0.107, Banded table (current) 0.094, FLC (expert) 0.079)
+     N FLC (data-tune Poly ridge (de Decision tree       MLP (8-8) Random forest 
+     8          0.053          0.548          0.078          0.272          0.065
+    15          0.048          0.126          0.075          0.203          0.052
+    30          0.043          0.050          0.069          0.149          0.047
+    60          0.037          0.028          0.063          0.110          0.042
+   120          0.032          0.017          0.052          0.053          0.036
+   250          0.028          0.013          0.041          0.019          0.034
+   500          0.027          0.009          0.034          0.012          0.033
+  1000          0.026          0.007          0.027          0.009          0.032
+
+  -> saved ../results/learning_curve.csv
+
+====================================================================================================
+D. Firmware intensity-estimator check (5 min window, trigger tip excluded)
+====================================================================================================
+Poisson tip arrivals at the true intensity, gauge resolution 0.2 mm/tip.
+Estimate = tips arriving AFTER event start / window * mm_per_tip * 60, exactly as firmware computes it.
+
+true mm/hr  true band  mean est  P(LIGHT)   P(MOD)  P(HEAVY)
+       0.5      light       0.5      0.98     0.02      0.00
+       1.0      light       1.0      0.94     0.06      0.00
+       2.0      light       2.0      0.80     0.19      0.01
+       5.0   moderate       5.0      0.39     0.46      0.16
+      10.0      heavy      10.0      0.08     0.33      0.60
+      20.0      heavy      20.0      0.00     0.03      0.97
+      40.0      heavy      39.9      0.00     0.00      1.00
+
+The initiating tip is retained for diversion-volume counting but excluded from the rate window.
+At 5 minutes each observed tip equals 2.4 mm/hr, so all three controller bands are reachable.
+
+====================================================================================================
+Figures
+====================================================================================================
+  -> saved ../results/surfaces.png
+  -> saved ../results/slices.png
+  -> saved ../results/learning_curve.png
+
+Caveat: experiments B and C score methods against a SYNTHETIC reference process, not field data.
+They test sensitivity to stated assumptions; see reference_process.py.
