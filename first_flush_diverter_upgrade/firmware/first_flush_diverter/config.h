@@ -34,6 +34,13 @@
   #error "Unsupported HARDWARE_TARGET"
 #endif
 
+// Bench/demo workaround: GPIO5 is tied to the breadboard GND (blue) rail
+// because no rain gauge or push button is available. The firmware generates
+// rain tips at a fixed interval while this is enabled. Set to 0 when a real
+// rain gauge or push button is connected.
+#define SIMULATE_RAIN_INPUT       1
+#define SIMULATED_TIP_INTERVAL_MS 5000UL
+
 
 #define ROOF_AREA_M2             50.0f
 #define RAIN_GAUGE_MM_PER_TIP    0.2f
@@ -45,9 +52,9 @@
 #define INTENSITY_LIGHT_MAX_MM_HR      2.5f
 #define INTENSITY_MODERATE_MAX_MM_HR   7.6f
 
-#define INTENSITY_WINDOW_MS (5UL * 60UL * 1000UL)
+#define INTENSITY_WINDOW_MS (15UL * 1000UL)
 
-#define RAIN_END_GAP_MS   (30UL * 60UL * 1000UL)
+#define RAIN_END_GAP_MS   (15UL * 1000UL)
 
 #define USE_FUZZY_CONTROLLER   1
 
@@ -88,6 +95,6 @@
 #define WIFI_SSID "YOUR_WIFI_NAME"
 #define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
 #define THINGSPEAK_WRITE_API_KEY "YOUR_THINGSPEAK_WRITE_KEY"
-#define TELEMETRY_INTERVAL_MS 20000UL
+#define TELEMETRY_INTERVAL_MS 15000UL
 
 #endif

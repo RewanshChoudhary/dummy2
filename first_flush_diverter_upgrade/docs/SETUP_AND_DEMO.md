@@ -1,13 +1,13 @@
 # ESP32-S3 setup, wiring, calibration, and viva demo
 
-Use an **ESP32-S3 DevKitC-compatible board**. The firmware is configured for the ESP32-S3 by default and uses native USB serial, an interrupt-driven rain input, a calibrated ADC turbidity reading, a servo, an HC-SR04 tank-level warning, and three status LEDs. Wi-Fi/ThingSpeak telemetry remains disabled until credentials are added.
+Use an **ESP32-S3 DevKitC-compatible board**. For this no-rain-gauge/no-button setup, connect GPIO5 to the verified GND (blue) rail and leave `SIMULATE_RAIN_INPUT` enabled in `config.h`. The firmware then generates simulated rain tips automatically. It also uses native USB serial, a calibrated ADC turbidity reading, a servo, an HC-SR04 tank-level warning, and three status LEDs. Wi-Fi/ThingSpeak telemetry remains disabled until credentials are added.
 
 ## Parts
 
 | Part | Quantity | Purpose |
 |---|---:|---|
 | ESP32-S3 DevKitC-compatible board | 1 | Controller |
-| Tipping-bucket rain gauge or push button | 1 | Rain-event and rainfall-volume input |
+| Rain gauge or push button | 0 for this setup | Optional physical rain-event input |
 | Analogue turbidity sensor | 1 | Water-quality safety check |
 | SG90 servo and diverter flap | 1 | Routes water to waste or storage |
 | HC-SR04 ultrasonic sensor | 1 | Tank air-gap measurement |
@@ -23,7 +23,7 @@ The active pins are defined in `firmware/first_flush_diverter/config.h`:
 
 | Connection | ESP32-S3 GPIO | Notes |
 |---|---:|---|
-| Rain gauge/button, one terminal | GPIO5 | Other terminal to GND; `INPUT_PULLUP` is enabled |
+| Simulated rain input | GPIO5 | Connect directly to the verified GND/blue rail; `INPUT_PULLUP` is enabled |
 | Turbidity sensor output | GPIO4 / ADC1 | Use the 10 kΩ / 10 kΩ divider below |
 | Servo signal | GPIO6 | Orange/yellow wire; power servo from external 5 V |
 | HC-SR04 trigger / echo | GPIO7 / GPIO8 | Echo must use the 5 V-to-3.3 V divider |
@@ -31,6 +31,8 @@ The active pins are defined in `firmware/first_flush_diverter/config.h`:
 | Red / green LEDs | GPIO10 / GPIO18 | Use a 220 Ω resistor for each |
 
 All grounds must be common. Connect the HC-SR04 `VCC` to 5 V, but never connect its 5 V `ECHO` directly to the ESP32-S3. Use 10 kΩ from `ECHO` to GPIO8 and 20 kΩ from GPIO8 to GND; this reduces the high level to approximately 3.3 V.
+
+For the simplest rain-input workaround, connect one jumper from GPIO5 to the breadboard's blue rail and connect that rail to ESP32-S3 GND. In `config.h`, keep `SIMULATE_RAIN_INPUT` set to `1`. GPIO5 will read LOW continuously, while the firmware creates a simulated rain tip every five seconds. Do not connect GPIO5 directly to 5 V. If a real rain gauge or push button is later added, remove the GND jumper and set `SIMULATE_RAIN_INPUT` to `0`.
 
 For the turbidity input, connect the sensor output through 10 kΩ to GPIO4 and connect another 10 kΩ from GPIO4 to GND. The firmware uses `TURBIDITY_DIVIDER_RATIO 0.5` and reads the S3 ADC with 11 dB attenuation and calibrated millivolts. Do not apply more than 3.3 V to any ESP32-S3 GPIO.
 
@@ -60,13 +62,13 @@ Keep credentials in the local [`.env`](../.env) file and never commit it. The Ar
 
 1. Show the diverter, collection cups, ESP32-S3, and the GPIO wiring.
 2. Reset the board: the servo must move to diversion/waste and the green LED should be on.
-3. Press the rain button on GPIO5 once after a chosen dry period; the Serial Monitor reports the event.
-4. Make further slow, medium, or rapid presses during the intensity window to represent different rainfall rates.
+3. With GPIO5 connected to the blue GND rail, wait for the firmware's automatic simulated rain event; the Serial Monitor reports it.
+4. The firmware generates a simulated tip every five seconds during the intensity window.
 5. At the calculated target, show a clean turbidity input. The servo changes to storage.
 6. Repeat with the divider input connected to GND to simulate dirty water and demonstrate the extension logic.
 7. Place an object within approximately 10 cm of the HC-SR04. The GPIO9 alert LED and red LED should turn on at the next level sample.
 
-The normal firmware uses a five-minute intensity window and a 30-minute rain-end gap. For a temporary bench demonstration, these can be shortened in `config.h`; restore the original values afterward.
+For this bench test, the intensity window and rain-end gap are both set to 15 seconds in `config.h`; the 5-second simulated-tip interval and 50-millisecond debounce remain unchanged. Restore the production timing values before deployment.
 
 ## Desktop verification
 

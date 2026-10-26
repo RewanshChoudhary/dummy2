@@ -44,6 +44,7 @@ float lastIntensityMmPerHr = 0.0f;
 float lastTurbidityNtu = -1.0f;
 unsigned long lastTelemetryMillis = 0;
 unsigned long lastTankLevelMillis = 0;
+unsigned long lastSimulatedTipMillis = 0;
 float lastTankDistanceCm = -1.0f;
 bool tankFull = false;
 
@@ -55,6 +56,7 @@ void setActuator(bool toStorage);
 float readTurbidityNtu();
 float readTankDistanceCm();
 void updateAuxiliaryOutputs();
+void updateSimulatedRain();
 bool rainHasStopped();
 unsigned long snapshotTipCount();
 int stateCode();
@@ -89,7 +91,13 @@ void setup() {
 
   setActuator(false);
 
+#if SIMULATE_RAIN_INPUT
+  // GPIO5 is deliberately held LOW by the external GND-rail connection.
+  // Do not attach an interrupt in simulation mode; tips are generated below.
+  lastSimulatedTipMillis = millis() - SIMULATED_TIP_INTERVAL_MS;
+#else
   attachInterrupt(digitalPinToInterrupt(PIN_RAIN_GAUGE_TIP), tipISR, FALLING);
+#endif
 
   drySpellStartMillis = millis();
   state = SystemState::DRY_SPELL_TRACKING;
@@ -103,6 +111,7 @@ void setup() {
 
 
 void loop() {
+  updateSimulatedRain();
   publishTelemetryIfDue();
   updateAuxiliaryOutputs();
   switch (state) {
@@ -243,6 +252,17 @@ void tipISR() {
   lastTipMillis = now;
   tipCount++;
   newTipSinceLoop = true;
+}
+
+
+void updateSimulatedRain() {
+#if SIMULATE_RAIN_INPUT
+  unsigned long now = millis();
+  if (now - lastSimulatedTipMillis >= SIMULATED_TIP_INTERVAL_MS) {
+    lastSimulatedTipMillis = now;
+    tipISR();
+  }
+#endif
 }
 
 
