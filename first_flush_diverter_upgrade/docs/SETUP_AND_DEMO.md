@@ -68,6 +68,10 @@ Keep credentials in the local [`.env`](../.env) file and never commit it. The Ar
 6. Repeat with the divider input connected to GND to simulate dirty water and demonstrate the extension logic.
 7. Place an object within approximately 10 cm of the HC-SR04. The GPIO9 alert LED and red LED should turn on at the next level sample.
 
+The Serial Monitor prints `SERVO_CMD` with the requested route and angle whenever the firmware commands the servo. This confirms that the ESP32-S3 sent the control signal; it cannot confirm physical movement because the SG90 has no position-feedback wire. If the log appears but the servo does not move, check the external regulated 5 V supply, common ground, and servo current capacity.
+
+The Serial Monitor also prints `ULTRASONIC` every five seconds with the measured tank distance in centimeters. `ULTRASONIC: no echo received` indicates a wiring, power, target-distance, or echo-divider problem.
+
 For this bench test, the intensity window and rain-end gap are both set to 15 seconds in `config.h`; the 5-second simulated-tip interval and 50-millisecond debounce remain unchanged. Restore the production timing values before deployment.
 
 ## Desktop verification

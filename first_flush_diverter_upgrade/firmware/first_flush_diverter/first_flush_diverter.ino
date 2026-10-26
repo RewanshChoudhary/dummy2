@@ -268,8 +268,14 @@ void updateSimulatedRain() {
 
 void setActuator(bool toStorage) {
   // Servo-flap version:
-  actuatorServo.write(toStorage ? SERVO_ANGLE_STORAGE : SERVO_ANGLE_DIVERT);
+  int targetAngle = toStorage ? SERVO_ANGLE_STORAGE : SERVO_ANGLE_DIVERT;
+  actuatorServo.write(targetAngle);
 
+  Serial.print(F("SERVO_CMD: "));
+  Serial.print(toStorage ? F("STORAGE") : F("WASTE/DIVERT"));
+  Serial.print(F(" angle="));
+  Serial.print(targetAngle);
+  Serial.println(F(" deg; command sent (no position feedback)"));
 
 }
 
@@ -282,8 +288,18 @@ float readTankDistanceCm() {
   digitalWrite(PIN_TANK_LEVEL_TRIG, LOW);
 
   unsigned long echoUs = pulseIn(PIN_TANK_LEVEL_ECHO, HIGH, 30000UL);
-  if (echoUs == 0UL) return -1.0f;  // no echo / sensor not connected
-  return echoUs / 58.0f;
+  if (echoUs == 0UL) {
+    Serial.println(F("ULTRASONIC: no echo received; distance unavailable"));
+    return -1.0f;  // no echo / sensor not connected
+  }
+
+  float distanceCm = echoUs / 58.0f;
+  Serial.print(F("ULTRASONIC: distance measured = "));
+  Serial.print(distanceCm, 1);
+  Serial.print(F(" cm (echo "));
+  Serial.print(echoUs);
+  Serial.println(F(" us)"));
+  return distanceCm;
 }
 
 
@@ -363,18 +379,37 @@ void publishTelemetryIfDue() {
 
 #if ENABLE_IOT && HARDWARE_TARGET == TARGET_ESP32_S3
 void connectWiFi() {
-  if (WiFi.status() == WL_CONNECTED) return;
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  unsigned long started = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - started < 10000UL) {
-    delay(250);
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print(F("Wi-Fi connected. IP: "));
+    Serial.println(WiFi.localIP());
+    return;
   }
+
+  WiFi.disconnect(true, false);
+  delay(500);
+
+  WiFi.mode(WIFI_STA);
+  delay(500);
+
+  Serial.println(F("Connecting to Wi-Fi..."));
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  unsigned long started = millis();
+
+  while (WiFi.status() != WL_CONNECTED &&
+         millis() - started < 15000UL) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println();
+
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print(F("Wi-Fi connected. IP: "));
     Serial.println(WiFi.localIP());
   } else {
-    Serial.println(F("Wi-Fi unavailable; continuing safely offline."));
+    Serial.print(F("Wi-Fi connection failed. Status: "));
+    Serial.println(WiFi.status());
   }
 }
 #endif
