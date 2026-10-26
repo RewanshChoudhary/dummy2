@@ -1,11 +1,12 @@
-# Adaptive First-Flush Diverter — Arduino Uno Guide
+# Adaptive First-Flush Diverter — ESP32-S3 Guide
 
 This project is a small automatic rainwater first-flush diverter. It sends the first, potentially dirty part of a rain event to waste and moves the flap to the storage tank after the calculated amount has passed.
 
 For a faculty-ready explanation, demonstration script, and viva questions, see [FACULTY_PRESENTATION.md](FACULTY_PRESENTATION.md).
 
-The Arduino Uno version is the active build. It works offline and uses:
+The ESP32-S3 version is the active build. It works offline by default and uses:
 
+- an ESP32-S3 controller with native USB serial,
 - a tipping-bucket rain gauge or pushbutton to represent rainfall,
 - an analogue turbidity sensor to check water quality,
 - an SG90 servo to move the diverter flap,
@@ -25,8 +26,8 @@ For a classroom demonstration, you do not need a complete rooftop plumbing syste
 3. Label one outlet **WASTE / FIRST FLUSH** and the other **STORAGE TANK**.
 4. Attach the SG90 servo horn to the flap.
 5. Place a cup under each outlet to collect diverted and stored water.
-6. Use a pushbutton on D2 instead of a rain gauge if the real gauge is not available. Each press represents one rain-gauge tip.
-7. If water is unavailable, leave the turbidity sensor disconnected and use the fixed A0 test described below.
+6. Use a pushbutton on GPIO5 instead of a rain gauge if the real gauge is not available. Each press represents one rain-gauge tip.
+7. If water is unavailable, leave the turbidity sensor disconnected and use the fixed GPIO4 test described below.
 8. Put an empty bottle or small tank under the storage outlet. Mount the HC-SR04 above it and move an object within 10 cm to demonstrate the tank-full alarm.
 
 The external objects needed for a convincing presentation are therefore:
@@ -40,7 +41,7 @@ The external objects needed for a convincing presentation are therefore:
 | Optional turbidity test wires | Simulates clean or dirty readings without water or a potentiometer |
 | SG90 servo and horn | Moves the flap |
 | Empty bottle/container | Demonstrates tank-level sensing |
-| USB cable | Programs and powers the Uno logic board |
+| USB cable | Programs and powers the ESP32-S3 logic board |
 | Regulated 5 V supply, preferably 1–2 A | Powers the servo and sensors |
 
 No water pump is required. Pour water manually through the model for a safe tabletop demonstration. Keep the electronics above the water containers and wipe up spills immediately.
@@ -49,7 +50,7 @@ No water pump is required. Pour water manually through the model for a safe tabl
 
 | Part | Quantity | Status | Function |
 |---|---:|---|---|
-| Arduino Uno | 1 | Required | Main controller |
+| ESP32-S3 DevKitC-compatible board | 1 | Required | Main controller |
 | Tipping-bucket rain gauge or pushbutton | 1 | Required | Rain event, intensity, and volume input |
 | Analogue turbidity sensor | 1 | Required | Checks whether diverted water is still cloudy |
 | SG90 servo and flap | 1 | Required | Selects waste or storage outlet |
@@ -65,67 +66,69 @@ Not used in the current build:
 
 - **DHT11:** no temperature/humidity measurement is performed.
 - **FC-37:** no separate rain-drop detection is performed; the tipping gauge or pushbutton starts the event.
-- **Wi-Fi/ThingSpeak:** the Uno has no built-in Wi-Fi.
+- **Wi-Fi/ThingSpeak:** disabled by default; the ESP32-S3 can provide telemetry after credentials are configured.
 
-## 3. Arduino Uno pin map
+## 3. ESP32-S3 pin map
 
 These pins are already defined in `firmware/first_flush_diverter/config.h`.
 
-| Component connection | Uno pin | Connection |
+| Component connection | ESP32-S3 GPIO | Connection |
 |---|---:|---|
-| Rain gauge or pushbutton signal | D2 | Other terminal to GND; internal pull-up is enabled |
-| Servo signal | D9 | Servo orange/yellow signal wire |
-| Turbidity analogue output | A0 | Sensor OUT |
-| HC-SR04 trigger | D7 | `TRIG` |
-| HC-SR04 echo | D8 | `ECHO` |
-| Alert LED anode through 220 Ω | D10 | Tank-full warning LED |
-| Red LED anode through 220 Ω | D11 | Red status LED |
-| Green LED anode through 220 Ω | D12 | Green status LED |
+| Rain gauge or pushbutton signal | GPIO5 | Other terminal to GND; internal pull-up is enabled |
+| Turbidity analogue output | GPIO4 / ADC1 | Connect through the divider described below |
+| Servo signal | GPIO6 | Servo orange/yellow signal wire |
+| HC-SR04 trigger | GPIO7 | `TRIG` |
+| HC-SR04 echo | GPIO8 | `ECHO` through a 5 V-to-3.3 V divider |
+| Alert LED anode through 220 Ω | GPIO9 | Tank-full warning LED |
+| Red LED anode through 220 Ω | GPIO10 | Red status LED |
+| Green LED anode through 220 Ω | GPIO18 | Green status LED |
 | All sensor/actuator grounds | GND | One common ground is essential |
 
 ### Component power connections
 
-- Uno: power by USB while programming and testing.
-- HC-SR04: `VCC` to 5 V, `GND` to GND.
-- Turbidity sensor: `VCC` and `GND` according to its module label; connect `OUT` to A0.
-- Servo: orange/yellow signal wire to D9. Leave the red and brown/black wires disconnected for now; the servo will not move without power.
-- LEDs: long leg/anode goes to the Uno pin through 220 Ω; short leg/cathode goes to GND.
-- D10 alert LED: connect D10 through 220 Ω to the long leg; connect the short leg to GND. This LED replaces the buzzer and produces no sound.
+- ESP32-S3: power/program by USB. Use a separate regulated 5 V supply for the servo.
+- HC-SR04: `VCC` to 5 V, `GND` to GND. Its `ECHO` must not connect directly to an ESP32-S3 GPIO.
+- Turbidity sensor: `VCC` and `GND` according to its module label. Use a 10 kΩ / 10 kΩ divider from `OUT` to GPIO4.
+- Servo: orange/yellow signal wire to GPIO6; red to the external 5 V supply and brown/black to common GND.
+- LEDs: long leg/anode goes to its ESP32-S3 GPIO through 220 Ω; short leg/cathode goes to GND.
+- GPIO9 alert LED: connect GPIO9 through 220 Ω to the long leg; connect the short leg to GND. This LED replaces the buzzer and produces no sound.
 
-Do not connect the servo's disconnected power wires until a suitable supply is available. Do not connect a sensor output above 5 V to an Uno input. If the turbidity module can output above 5 V, use a suitable divider or level-protection circuit.
+Do not connect a sensor output above 3.3 V directly to an ESP32-S3 GPIO. The equal-value turbidity divider makes the configured 0–5 V sensor range approximately 0–2.5 V at GPIO4. Use a voltage divider or logic-level shifter on the HC-SR04 `ECHO` line; a 10 kΩ upper resistor and 20 kΩ lower resistor produces about 3.3 V from a 5 V echo.
 
 ## 4. Wiring procedure for a beginner
 
 Switch off USB and the external supply before wiring.
 
-1. Place the Uno and breadboard on a dry table.
-2. Connect Uno GND to the breadboard's ground rail.
-3. Connect the HC-SR04: `VCC → 5 V`, `GND → GND`, `TRIG → D7`, `ECHO → D8`.
-4. Connect the turbidity sensor: `VCC → 5 V`, `GND → GND`, `OUT → A0`.
-5. Connect the rain pushbutton between D2 and GND. Do not add an external pull-up; the sketch uses `INPUT_PULLUP`.
-6. Connect the servo orange/yellow signal wire to D9. Leave the red and brown/black servo wires disconnected for now; the servo will not move without power.
-7. Connect the D10 LED: D10 → 220 Ω resistor → LED long leg; LED short leg → GND.
-8. Connect the red LED from D11 through 220 Ω to GND.
-9. Connect the green LED from D12 through 220 Ω to GND.
+1. Place the ESP32-S3 and breadboard on a dry table.
+2. Connect ESP32-S3 GND to the breadboard's ground rail.
+3. Connect the HC-SR04: `VCC → 5 V`, `GND → GND`, `TRIG → GPIO7`, and `ECHO → GPIO8` through a level-shifting divider.
+4. Connect the turbidity sensor: `VCC` and `GND` according to its module label, then connect `OUT → 10 kΩ → GPIO4`, with another 10 kΩ from GPIO4 to GND.
+5. Connect the rain pushbutton between GPIO5 and GND. Do not add an external pull-up; the sketch uses `INPUT_PULLUP`.
+6. Connect the servo orange/yellow signal wire to GPIO6. Power the servo from the external 5 V supply and connect its ground to ESP32-S3 GND.
+7. Connect the alert LED from GPIO9 through 220 Ω to GND.
+8. Connect the red LED from GPIO10 through 220 Ω to GND.
+9. Connect the green LED from GPIO18 through 220 Ω to GND.
 10. Check every ground connection, then connect USB and the external 5 V supply.
 
-The HC-SR04 echo is safe for the 5 V Arduino Uno. If this wiring is later moved to an ESP32, the echo signal must be reduced to 3.3 V with a divider.
+The ESP32-S3 GPIOs are 3.3 V logic. Never connect the 5 V HC-SR04 `ECHO` directly; use a divider such as 10 kΩ from `ECHO` to GPIO8 and 20 kΩ from GPIO8 to GND.
 
 ## 5. Install and upload the firmware
 
-1. Install the Arduino IDE.
+1. Install the Arduino IDE and the Espressif ESP32 board package.
 2. Open `firmware/first_flush_diverter/first_flush_diverter.ino`.
 3. Keep all files in the same sketch folder:
    - `first_flush_diverter.ino`
    - `config.h`
    - `diverter_logic.h` and `diverter_logic.cpp`
    - `fuzzy_controller.h` and `fuzzy_controller.cpp`
-4. Select **Tools → Board → Arduino AVR Boards → Arduino Uno**.
+4. Select **Tools → Board → ESP32 Arduino → ESP32S3 Dev Module** (or the exact ESP32-S3 board variant).
 5. Select the correct USB port under **Tools → Port**.
 6. Click **Verify** first, then **Upload**.
 7. Open **Tools → Serial Monitor** and select **115200 baud**.
 
-The only library required by the Uno firmware is Arduino's built-in `Servo` library. Do not install DHT11 or FC-37 libraries for this build.
+Install the `ESP32Servo` library for the ESP32-S3 firmware. Do not install DHT11 or FC-37 libraries for this build. If using native USB, select the board's USB CDC serial option and keep GPIO19/GPIO20 free.
+
+For ThingSpeak credentials, copy [`.env.example`](.env.example) to [`.env`](.env), fill in the Wi-Fi and API-key values, and copy them into the matching macros in `firmware/first_flush_diverter/config.h`. The Arduino firmware cannot read a dotenv file directly. Set `ENABLE_IOT` to `1` only after the values are configured.
 
 If the IDE reports that a file is missing, confirm that the `.h` and `.cpp` files are beside the `.ino` file, not only in the repository's parent folder.
 
@@ -143,7 +146,7 @@ The auxiliary outputs work independently:
 
 - Red LED: intensity measurement, diverting, turbidity checking, or tank-full warning.
 - Green LED: dry-spell tracking or storage, when the tank is not full.
-- D10 alert LED: lights when the HC-SR04 measures an air gap of 10 cm or less.
+- GPIO9 alert LED: lights when the HC-SR04 measures an air gap of 10 cm or less.
 - HC-SR04: sampled every five seconds; it warns but does not automatically change the servo route.
 
 ## 7. First power-on test
@@ -151,10 +154,10 @@ The auxiliary outputs work independently:
 Test the electronics before adding water.
 
 1. Upload the sketch and open Serial Monitor at 115200 baud.
-2. Reset the Uno. You should see a ready message.
+2. Reset the ESP32-S3. You should see a ready message.
 3. The servo should move to the DIVERT/WASTE position. Adjust the mechanical linkage if necessary.
 4. The green LED should normally be on during dry-spell tracking.
-5. Put an object less than 10 cm from the HC-SR04. Within about five seconds, the D10 alert LED and red LED should turn on. No sound is produced because the buzzer has been replaced by an LED.
+5. Put an object less than 10 cm from the HC-SR04. Within about five seconds, the GPIO9 alert LED and red LED should turn on. No sound is produced because the buzzer has been replaced by an LED.
 6. Move the object away. The tank-full alert should clear at the next level sample.
 7. Press the rain button once. The Serial Monitor should report that a rain event started and the red LED should turn on.
 
@@ -169,23 +172,23 @@ Use only the angles that are mechanically safe for your flap.
 
 ## 8. Dry-run turbidity test without water or a potentiometer
 
-If you do not have water or a potentiometer, temporarily simulate the turbidity sensor with a jumper wire. Disconnect the turbidity sensor's `OUT` wire from A0 first.
+If you do not have water or a potentiometer, temporarily simulate the turbidity sensor with a jumper wire. Disconnect the turbidity sensor's `OUT` wire from the GPIO4 divider first.
 
-For the clean-water simulation:
+For the clean-water simulation, connect the sensor-side input of the divider to 5 V:
 
 ```text
-A0 → Uno 5 V
+5 V → 10 kΩ → GPIO4 → 10 kΩ → GND
 ```
 
 For the dirty-water simulation:
 
 ```text
-A0 → Uno GND
+GND → sensor-side input of the divider
 ```
 
-Power off the Uno before changing between these two connections. A0 connected to 5 V produces a clean reading; A0 connected to GND produces a high turbidity reading. Run the demonstration twice to show both outcomes.
+Power off the ESP32-S3 before changing between these two connections. A 5 V signal through the documented divider produces a clean reading; the divider input connected to GND produces a high turbidity reading. Run the demonstration twice to show both outcomes.
 
-Never connect A0 to 5 V and GND at the same time. Do not leave the turbidity sensor's output connected while forcing A0 to 5 V or GND. Do not operate a normal turbidity probe dry; use this fixed-voltage method only for a dry electronics demonstration.
+Never connect the divider input to 5 V and GND at the same time. Do not leave the turbidity sensor's output connected while forcing the divider input to 5 V or GND. Do not operate a normal turbidity probe dry; use this fixed-voltage method only for a dry electronics demonstration.
 
 ## 9. Short classroom demonstration
 
@@ -200,14 +203,14 @@ Restore the original values before treating the system as a real installation.
 
 Demonstration sequence:
 
-1. Show the physical flap, the WASTE and STORAGE labels, the two collection cups, and the Uno wiring.
-2. Reset the Uno and explain that the fail-safe position is WASTE.
+1. Show the physical flap, the WASTE and STORAGE labels, the two collection cups, and the ESP32-S3 wiring.
+2. Reset the ESP32-S3 and explain that the fail-safe position is WASTE.
 3. Leave the system waiting for a short period, then press the rain button once. Explain that this starts the event and records the dry spell.
 4. Press the button slowly, moderately, or quickly during the measurement window. Explain that the press rate represents light, moderate, or heavy rain.
 5. After the measurement window, read the Serial Monitor. It reports intensity, target litres, target tips, and the fuzzy multiplier.
 6. Continue pressing the button until the target is reached. The controller then reads turbidity.
-7. For a dry demonstration, connect A0 to 5 V to simulate clean water and repeat the target-volume test. Then power off, connect A0 to GND, and repeat it to simulate dirty water and an extended diversion.
-8. Move an object close to the HC-SR04 to demonstrate the independent tank-full D10 alert LED and red LED warning.
+7. For a dry demonstration, connect the divider input to 5 V to simulate clean water and repeat the target-volume test. Then power off, connect it to GND, and repeat it to simulate dirty water and an extended diversion.
+8. Move an object close to the HC-SR04 to demonstrate the independent tank-full GPIO9 alert LED and red LED warning.
 9. Explain that DHT11 and FC-37 are not part of this demonstration because they are unavailable.
 
 The first button press starts the event but is excluded from the intensity-rate calculation. It is still retained for diversion-volume counting.
@@ -226,7 +229,7 @@ For the turbidity sensor:
 1. Measure the clean-water output voltage at the sensor output.
 2. Set `TURBIDITY_CLEAN_VOLTAGE` to that voltage.
 3. Test known clean and muddy samples and estimate `TURBIDITY_NTU_PER_VOLT`.
-4. Keep `TURBIDITY_DIVIDER_RATIO` at `1.0` when the Uno reads the sensor directly. Change it only if a voltage divider is installed.
+4. Keep `TURBIDITY_DIVIDER_RATIO` at `0.5` for the documented ESP32-S3 10 kΩ / 10 kΩ divider. Change it only if a different divider is installed.
 5. Treat this as a prototype safety signal, not certified drinking-water testing.
 
 The servo angles, rain-gauge resolution, roof area, and turbidity values must be verified at the installation site.
@@ -235,13 +238,13 @@ The servo angles, rain-gauge resolution, roof area, and turbidity values must be
 
 | Problem | Likely cause | Fix |
 |---|---|---|
-| Uno resets when servo moves | Servo draws too much current | Use the external 5 V supply and connect its GND to Uno GND |
-| Servo does not move | Servo power is intentionally disconnected | This is expected with the current wiring; only D9 is connected |
-| No rain event starts | Button is not connected to GND or is on the wrong pin | Connect the button between D2 and GND |
-| Turbidity always reads zero or an extreme value | Wrong sensor voltage or calibration | Check OUT to A0 and calibrate the two turbidity constants |
-| HC-SR04 alarm never changes | TRIG/ECHO reversed or no common ground | Check D7, D8, VCC, GND, and the five-second sample interval |
-| LEDs do not light | LED polarity or missing resistor | Long leg through 220 Ω to D11/D12; short leg to GND |
-| D10 alert LED is off | Wrong polarity or tank is not within threshold | Check LED polarity/resistor and test with an object within 10 cm of the HC-SR04 |
+| ESP32-S3 resets when servo moves | Servo draws too much current or grounds are separate | Use the external 5 V supply and connect its GND to ESP32-S3 GND |
+| Servo does not move | Servo power is disconnected or grounds are separate | Power the servo from an external 5 V supply and connect its ground to ESP32-S3 GND |
+| No rain event starts | Button is not connected to GND or is on the wrong pin | Connect the button between GPIO5 and GND |
+| Turbidity always reads zero or an extreme value | Wrong divider, sensor voltage, or calibration | Check the 10 kΩ / 10 kΩ divider at GPIO4 and calibrate the two turbidity constants |
+| HC-SR04 alarm never changes | TRIG/ECHO reversed, no level shifting, or no common ground | Check GPIO7, GPIO8, the echo divider, VCC, GND, and the five-second sample interval |
+| LEDs do not light | LED polarity or missing resistor | Long legs through 220 Ω to GPIO9/GPIO10/GPIO18; short legs to GND |
+| Alert LED is off | Wrong polarity or tank is not within threshold | Check LED polarity/resistor and test with an object within 10 cm of the HC-SR04 |
 | IDE cannot find a header file | Files are not beside the `.ino` file | Put all firmware files in the same sketch folder |
 
 ## 12. Run the desktop simulations and tests
@@ -262,7 +265,7 @@ The parity check compiles the controller C++ files with `g++` and compares them 
 | Path | Purpose |
 |---|---|
 | `firmware/first_flush_diverter/first_flush_diverter.ino` | Arduino state machine and hardware I/O |
-| `firmware/first_flush_diverter/config.h` | Uno pins, calibration, thresholds, and controller settings |
+| `firmware/first_flush_diverter/config.h` | ESP32-S3 pins, calibration, thresholds, and controller settings |
 | `firmware/first_flush_diverter/diverter_logic.*` | Core banded diversion calculations |
 | `firmware/first_flush_diverter/fuzzy_controller.*` | Fuzzy controller implementation |
 | `simulation/` | Python models, tests, scenarios, and parity check |
@@ -271,7 +274,7 @@ The parity check compiles the controller C++ files with `g++` and compares them 
 
 ## 14. Project limitations
 
-- The Uno build is offline; it has no built-in Wi-Fi.
+- The ESP32-S3 build is offline by default; set `ENABLE_IOT` to `1` only after adding private Wi-Fi and ThingSpeak credentials.
 - DHT11 and FC-37 are not installed or active.
 - The HC-SR04 only gives a local tank-full warning; it does not stop the inlet or move the servo automatically.
 - A button simulates rain tips but does not measure real rainfall.

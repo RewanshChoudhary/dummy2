@@ -1,12 +1,8 @@
-// fuzzy_controller.cpp
-//
-// Implementation of fuzzy_controller.h. Mirrors fuzzy_controller.py.
+
 
 #include "fuzzy_controller.h"
 #include "config.h"
 
-// Blend zones must not overlap each other, otherwise the "middle set =
-// 1 - outer sets" construction is not a valid partition.
 static_assert(DRY_SPELL_SHORT_MAX_HOURS + FUZZY_DRY_SHORT_MEDIUM_HALF_WIDTH_H <=
               DRY_SPELL_LONG_MIN_HOURS - FUZZY_DRY_MEDIUM_LONG_HALF_WIDTH_H,
               "fuzzy dry-spell blend zones overlap");
@@ -14,7 +10,7 @@ static_assert(INTENSITY_LIGHT_MAX_MM_HR + FUZZY_INT_LIGHT_MODERATE_HALF_WIDTH <=
               INTENSITY_MODERATE_MAX_MM_HR - FUZZY_INT_MODERATE_HEAVY_HALF_WIDTH,
               "fuzzy intensity blend zones overlap");
 
-// 0 below a, 1 above b, linear in between.
+
 static float rampUp(float x, float a, float b) {
   if (x <= a) return 0.0f;
   if (x >= b) return 1.0f;
@@ -62,7 +58,7 @@ float fuzzyMultiplier(float drySpellHours, float intensityMmPerHr) {
   return weightedSum / totalWeight;
 }
 
-// Index of the largest degree; ties keep the lower band (same as Python).
+
 static uint8_t argmax3(const FuzzyMemberships& m) {
   uint8_t best = 0;
   for (uint8_t k = 1; k < 3; k++) {

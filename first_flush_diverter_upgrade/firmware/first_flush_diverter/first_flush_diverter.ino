@@ -1,61 +1,21 @@
-// first_flush_diverter.ino
-//
-// Adaptive First-Flush Diverter for Rainwater Harvesting - prototype
-// firmware (report Section 6/7: Hardware Design & Implementation).
-//
-// Target: Arduino Uno by default; ESP32 remains available as an optional target.
-// Libraries: ESP32 -> install "ESP32Servo" (Tools > Manage Libraries).
-//            Arduino Uno -> built-in "Servo" library.
-//
-// This sketch is a state machine that implements the working principle
-// from Section 4.3 end-to-end:
-//   1. DRY_SPELL_TRACKING   - time since the last tick accumulates as the
-//                             dry-spell duration (Section 5.1.1).
-//   2. INTENSITY_MEASURING  - the first ~1-2 minutes of a new rain event
-//                             are used to estimate initial intensity
-//                             (Section 5.1.2). The actuator stays in the
-//                             DIVERT position throughout, so no runoff is
-//                             lost while intensity is being measured.
-//   3. DIVERTING            - the calculated diversion volume (as a tick
-//                             count, Section 5.1.4) is waited out.
-//   4. TURBIDITY_CHECK      - optional safety fallback (Section 5.1.5):
-//                             if the water is still cloudy, diversion is
-//                             extended in fixed steps, capped at
-//                             TURBIDITY_MAX_EXTENSIONS.
-//   5. STORAGE              - actuator switched to the tank; the sketch
-//                             waits for a long tick-free gap to conclude
-//                             the rain event has ended, then resets.
-//
-// For a bench/viva demo (Section 7.2.1), rain-gauge ticks can be produced
-// by manually pressing a button wired to PIN_RAIN_GAUGE_TIP at a chosen
-// rate instead of an outdoor gauge - fast presses simulate heavy
-// intensity, slow presses simulate light intensity, and simply waiting
-// before the first press simulates a chosen dry-spell length.
+
 
 #include "config.h"
-#if HARDWARE_TARGET == TARGET_ESP32
+#if HARDWARE_TARGET == TARGET_ESP32_S3
   #include <ESP32Servo.h>
 #else
   #include <Servo.h>
 #endif
-#if ENABLE_IOT && HARDWARE_TARGET == TARGET_ESP32
+#if ENABLE_IOT && HARDWARE_TARGET == TARGET_ESP32_S3
   #include <WiFi.h>
   #include <HTTPClient.h>
 #endif
 
-// DHT11 and FC-37 support is intentionally disabled: these parts are not
-// available. Uncomment and implement these lines only after obtaining them.
-// #include <DHT.h>
-// #define PIN_DHT11 A1
-// #define PIN_FC37 A2
-// DHT dht(PIN_DHT11, DHT11);
 
 #include "diverter_logic.h"
 #include "fuzzy_controller.h"
 
-// ---------------------------------------------------------------------
-// State machine
-// ---------------------------------------------------------------------
+
 enum class SystemState {
   DRY_SPELL_TRACKING,
   INTENSITY_MEASURING,
@@ -66,21 +26,16 @@ enum class SystemState {
 
 static SystemState state = SystemState::DRY_SPELL_TRACKING;
 
-// ---------------------------------------------------------------------
-// Rain-gauge tip counting (ISR-driven)
-// ---------------------------------------------------------------------
-volatile unsigned long tipCount = 0;         // ticks since current event started
-volatile unsigned long lastTipMillis = 0;     // for debounce and "rain ended" gap
-volatile bool newTipSinceLoop = false;        // set by ISR, cleared by loop()
+volatile unsigned long tipCount = 0;
+volatile unsigned long lastTipMillis = 0;
+volatile bool newTipSinceLoop = false;
 
-// ---------------------------------------------------------------------
-// Event-scoped state
-// ---------------------------------------------------------------------
-unsigned long drySpellStartMillis = 0;     // reset at the end of each rain event
-unsigned long eventStartMillis = 0;        // when the current rain event began
-unsigned long intensityStartTipCount = 0;  // excludes the event-trigger tip
-float pendingDrySpellHours = 0.0f;         // captured at event start, used once
-                                            // the intensity window closes
+
+unsigned long drySpellStartMillis = 0;
+unsigned long eventStartMillis = 0;
+unsigned long intensityStartTipCount = 0;
+float pendingDrySpellHours = 0.0f;
+
 
 DiversionPlan currentPlan;
 unsigned long diversionTargetTicks = 0;
@@ -94,9 +49,7 @@ bool tankFull = false;
 
 Servo actuatorServo;
 
-// ---------------------------------------------------------------------
-// Forward declarations (helper functions defined below loop())
-// ---------------------------------------------------------------------
+
 void tipISR();
 void setActuator(bool toStorage);
 float readTurbidityNtu();
@@ -106,13 +59,10 @@ bool rainHasStopped();
 unsigned long snapshotTipCount();
 int stateCode();
 void publishTelemetryIfDue();
-#if ENABLE_IOT && HARDWARE_TARGET == TARGET_ESP32
+#if ENABLE_IOT && HARDWARE_TARGET == TARGET_ESP32_S3
 void connectWiFi();
 #endif
 
-// ---------------------------------------------------------------------
-// Setup
-// ---------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
   pinMode(PIN_RAIN_GAUGE_TIP, INPUT_PULLUP);
@@ -126,21 +76,17 @@ void setup() {
   digitalWrite(PIN_STATUS_RED, LOW);
   digitalWrite(PIN_STATUS_GREEN, LOW);
   digitalWrite(PIN_ALERT_LED, LOW);
-  // Take the first level reading immediately. Later readings use the normal
-  // interval even if the HC-SR04 is disconnected and returns no echo.
+
   lastTankLevelMillis = millis() - TANK_LEVEL_SAMPLE_MS;
 
-#if HARDWARE_TARGET == TARGET_ESP32
-  // Match the 0-3.3 V ADC input range. A 5 V turbidity module MUST have
-  // its analogue output divided down before it reaches GPIO34.
+#if HARDWARE_TARGET == TARGET_ESP32_S3
+  analogReadResolution(12);
   analogSetPinAttenuation(PIN_TURBIDITY_SENSOR, ADC_11db);
 #endif
 
   actuatorServo.attach(PIN_ACTUATOR);
 
-  // Fail-safe default: hold the diverter open (away from the tank) until
-  // a full predictive plan says otherwise - protects water quality if the
-  // system resets mid-event.
+
   setActuator(false);
 
   attachInterrupt(digitalPinToInterrupt(PIN_RAIN_GAUGE_TIP), tipISR, FALLING);
@@ -148,16 +94,14 @@ void setup() {
   drySpellStartMillis = millis();
   state = SystemState::DRY_SPELL_TRACKING;
 
-#if ENABLE_IOT && HARDWARE_TARGET == TARGET_ESP32
+#if ENABLE_IOT && HARDWARE_TARGET == TARGET_ESP32_S3
   connectWiFi();
 #endif
 
   Serial.println(F("Adaptive First-Flush Diverter - ready. Tracking dry spell."));
 }
 
-// ---------------------------------------------------------------------
-// Main loop (state machine)
-// ---------------------------------------------------------------------
+
 void loop() {
   publishTelemetryIfDue();
   updateAuxiliaryOutputs();
@@ -165,18 +109,12 @@ void loop() {
 
     case SystemState::DRY_SPELL_TRACKING: {
       if (newTipSinceLoop) {
-        // NOTE: millis() is a 32-bit counter and overflows after ~49.7
-        // days. A dry spell tracked purely on millis() cannot correctly
-        // span longer than that - for a real deployment, back this with
-        // an RTC module rather than millis() alone (Section 8.4 flags
-        // that the timing/calibration assumptions need field hardening).
+
         unsigned long drySpellMs = millis() - drySpellStartMillis;
         pendingDrySpellHours = drySpellMs / 3600000.0f;
 
         eventStartMillis = millis();
-        // Do NOT set this to 1 or include it in the rate. The initiating
-        // tip occurred before the measurement window and is still retained
-        // in tipCount for the diversion-volume calculation.
+
         intensityStartTipCount = snapshotTipCount();
         noInterrupts();
         newTipSinceLoop = false;
@@ -195,7 +133,7 @@ void loop() {
       unsigned long elapsed = millis() - eventStartMillis;
 
       if (newTipSinceLoop) {
-        newTipSinceLoop = false;  // just keep counting; window closes on time
+        newTipSinceLoop = false;
       }
 
       if (rainHasStopped()) {
@@ -231,7 +169,7 @@ void loop() {
         Serial.print(currentPlan.multiplier, 3);
         Serial.println(F("x."));
 
-        setActuator(false);  // stay diverted while we wait out the volume
+        setActuator(false);
         state = SystemState::DIVERTING;
       }
       break;
@@ -242,8 +180,7 @@ void loop() {
         Serial.println(F("Calculated diversion volume reached."));
         state = SystemState::TURBIDITY_CHECK;
       } else if (rainHasStopped()) {
-        // Rain ended before the full calculated volume passed - nothing
-        // more to divert; go straight to the end-of-event reset.
+
         Serial.println(F("Rain stopped before target volume - ending event."));
         state = SystemState::STORAGE;
       }
@@ -285,7 +222,7 @@ void loop() {
     case SystemState::STORAGE: {
       if (rainHasStopped()) {
         Serial.println(F("Rain event ended. Resetting for next dry spell."));
-        setActuator(false);  // fail-safe default for the next event
+        setActuator(false);
         drySpellStartMillis = millis();
         noInterrupts();
         tipCount = 0;
@@ -298,36 +235,25 @@ void loop() {
   }
 }
 
-// ---------------------------------------------------------------------
-// Interrupt service routine
-// ---------------------------------------------------------------------
 void tipISR() {
   unsigned long now = millis();
   if (now - lastTipMillis < TIP_DEBOUNCE_MS) {
-    return;  // debounce - ignore contact bounce / accidental double-trigger
+    return;
   }
   lastTipMillis = now;
   tipCount++;
   newTipSinceLoop = true;
 }
 
-// ---------------------------------------------------------------------
-// Actuator control
-// ---------------------------------------------------------------------
+
 void setActuator(bool toStorage) {
   // Servo-flap version:
   actuatorServo.write(toStorage ? SERVO_ANGLE_STORAGE : SERVO_ANGLE_DIVERT);
 
-  // Solenoid-valve version (Section 6.1 alternative) - comment out the
-  // line above and use this instead if PIN_ACTUATOR drives a relay/MOSFET:
-  // digitalWrite(PIN_ACTUATOR, toStorage ? HIGH : LOW);
+
 }
 
-// ---------------------------------------------------------------------
-// Auxiliary hardware
-// ---------------------------------------------------------------------
-// HC-SR04: measures the air gap above the tank water. A short distance means
-// the tank is nearly full. The Uno can read the 5 V echo signal directly.
+
 float readTankDistanceCm() {
   digitalWrite(PIN_TANK_LEVEL_TRIG, LOW);
   delayMicroseconds(2);
@@ -340,9 +266,7 @@ float readTankDistanceCm() {
   return echoUs / 58.0f;
 }
 
-// LEDs provide a local status display without changing the core diversion
-// state machine: red means diverting/alert, green means storage, and the
-// D10 alert LED means the tank-full distance threshold is detected.
+
 void updateAuxiliaryOutputs() {
   if (millis() - lastTankLevelMillis >= TANK_LEVEL_SAMPLE_MS) {
     lastTankLevelMillis = millis();
@@ -360,23 +284,24 @@ void updateAuxiliaryOutputs() {
   digitalWrite(PIN_ALERT_LED, tankFull ? HIGH : LOW);
 }
 
-// ---------------------------------------------------------------------
-// Turbidity sensor reading -> approximate NTU
-// ---------------------------------------------------------------------
+
 float readTurbidityNtu() {
+#if HARDWARE_TARGET == TARGET_ESP32_S3
+  // analogReadMilliVolts() uses the ESP32-S3 ADC calibration data. The
+  // divider is undone below so calibration remains expressed at sensor OUT.
+  float adcVoltage = analogReadMilliVolts(PIN_TURBIDITY_SENSOR) / 1000.0f;
+#else
   int raw = analogRead(PIN_TURBIDITY_SENSOR);
   float adcVoltage = raw * (ADC_REFERENCE_VOLTS / ADC_MAX_READING);
-  // Undo the resistor divider so 'voltage' is what the sensor really outputs.
+#endif
+
   float voltage = adcVoltage / TURBIDITY_DIVIDER_RATIO;
-  // Calibration is deliberately explicit: record clean voltage and slope
-  // from known samples instead of silently assuming an Uno's 5 V / 10-bit ADC.
+
   float ntu = (TURBIDITY_CLEAN_VOLTAGE - voltage) * TURBIDITY_NTU_PER_VOLT;
   return ntu < 0.0f ? 0.0f : ntu;
 }
 
-// ---------------------------------------------------------------------
-// Has the rain stopped? (no tick for RAIN_END_GAP_MS)
-// ---------------------------------------------------------------------
+
 bool rainHasStopped() {
   noInterrupts();
   unsigned long lastTip = lastTipMillis;
@@ -396,7 +321,7 @@ int stateCode() {
 }
 
 void publishTelemetryIfDue() {
-#if ENABLE_IOT && HARDWARE_TARGET == TARGET_ESP32
+#if ENABLE_IOT && HARDWARE_TARGET == TARGET_ESP32_S3
   if (millis() - lastTelemetryMillis < TELEMETRY_INTERVAL_MS) return;
   lastTelemetryMillis = millis();
   if (WiFi.status() != WL_CONNECTED) connectWiFi();
@@ -416,7 +341,7 @@ void publishTelemetryIfDue() {
 #endif
 }
 
-#if ENABLE_IOT && HARDWARE_TARGET == TARGET_ESP32
+#if ENABLE_IOT && HARDWARE_TARGET == TARGET_ESP32_S3
 void connectWiFi() {
   if (WiFi.status() == WL_CONNECTED) return;
   WiFi.mode(WIFI_STA);

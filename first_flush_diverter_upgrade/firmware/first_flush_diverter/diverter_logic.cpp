@@ -1,7 +1,4 @@
-// diverter_logic.cpp
-//
-// Implementation of the decision-logic declared in diverter_logic.h.
-// See that file and report Section 5.1 for the rationale of each piece.
+
 
 #include "diverter_logic.h"
 #include "config.h"
@@ -19,11 +16,9 @@ IntensityBand classifyIntensity(float intensityMmPerHr) {
   return IntensityBand::HEAVY;
 }
 
-// Section 5.1.3 lookup table: MULTIPLIER_TABLE[dry_band][intensity_band].
-// Keep this numerically identical to DIVERSION_MULTIPLIER_TABLE in
-// simulation/diverter_logic.py if either is recalibrated.
+
 static const float MULTIPLIER_TABLE[3][3] = {
-    // LIGHT   MODERATE  HEAVY
+
     {0.70f, 0.80f, 0.90f},  // SHORT
     {0.90f, 1.00f, 1.15f},  // MEDIUM
     {1.20f, 1.35f, 1.55f},  // LONG
@@ -34,7 +29,7 @@ float getMultiplier(DrySpellBand dryBand, IntensityBand intensityBand) {
 }
 
 float baseVolumeLiters(float roofAreaM2, float baseFlushDepthMm) {
-  // 1 mm of runoff depth over 1 sq. metre of roof == 1 litre of water.
+
   return roofAreaM2 * baseFlushDepthMm;
 }
 

@@ -19,7 +19,7 @@ This prototype addresses those limitations by making the diversion decision from
 ## What the system does
 
 1. Tracks the dry period since the previous rain event.
-2. Detects the beginning of rainfall from a tipping-bucket input or a temporary manual D2-to-GND trigger.
+2. Detects the beginning of rainfall from a tipping-bucket input or a temporary manual GPIO5-to-GND trigger.
 3. Measures the initial rainfall intensity from the rate of rain tips.
 4. Calculates an adaptive first-flush volume using dry-spell duration and rainfall intensity.
 5. Keeps the diverter in the waste position until that calculated volume has passed.
@@ -55,7 +55,7 @@ The controller is implemented as a **finite-state machine**. This makes the oper
 | Turbidity check | Reads the analogue turbidity sensor | Red LED on |
 | Storage | Sends acceptable water toward the storage tank | Green LED on |
 
-The D10 alert LED is independent of the main state indication. It lights when the HC-SR04 detects an air gap of 10 cm or less, indicating that the tank is nearly full.
+The GPIO9 alert LED is independent of the main state indication. It lights when the HC-SR04 detects an air gap of 10 cm or less, indicating that the tank is nearly full.
 
 ## How the adaptive decision is calculated
 
@@ -96,21 +96,21 @@ If the turbidity reading remains above the threshold, the controller adds 10% di
 
 ## Current hardware connections
 
-| Component | Arduino Uno connection | Function |
+| Component | ESP32-S3 connection | Function |
 |---|---|---|
-| Rain tip trigger | D2 to GND momentarily | Simulates a rain-gauge tip; uses `INPUT_PULLUP` |
-| Turbidity sensor output | A0 | Analogue water-quality reading |
-| HC-SR04 trigger | D7 | Starts tank-distance measurement |
-| HC-SR04 echo | D8 | Receives tank-distance measurement |
-| SG90 signal | D9 | Servo control signal |
-| Alert LED | D10 through 220 Ω | Tank-full warning; replaces the buzzer |
-| Red LED | D11 through 220 Ω | Diverting, turbidity-check, or warning status |
-| Green LED | D12 through 220 Ω | Dry-spell tracking or storage status |
+| Rain tip trigger | GPIO5 to GND momentarily | Simulates a rain-gauge tip; uses `INPUT_PULLUP` |
+| Turbidity sensor output | GPIO4 / ADC1 through 10 kΩ / 10 kΩ divider | Analogue water-quality reading |
+| HC-SR04 trigger | GPIO7 | Starts tank-distance measurement |
+| HC-SR04 echo | GPIO8 through 5 V-to-3.3 V divider | Receives tank-distance measurement |
+| SG90 signal | GPIO6 | Servo control signal |
+| Alert LED | GPIO9 through 220 Ω | Tank-full warning; replaces the buzzer |
+| Red LED | GPIO10 through 220 Ω | Diverting, turbidity-check, or warning status |
+| Green LED | GPIO18 through 220 Ω | Dry-spell tracking or storage status |
 | Sensor power | 5 V and GND rails | Shared electrical reference |
 
 ### Important current prototype limitation
 
-Only the SG90 orange/yellow signal wire is currently connected to D9. The red power wire and brown/black ground wire are intentionally disconnected. Therefore, the firmware can demonstrate the control decision and servo command, but the servo will not physically move until a suitable servo supply and common ground are connected.
+The SG90 orange/yellow signal wire connects to GPIO6. The servo must be powered from a separate regulated 5 V supply, with its brown/black ground connected to ESP32-S3 GND. The HC-SR04 echo also requires a resistor divider because ESP32-S3 GPIOs are 3.3 V logic.
 
 ## What makes the project impressive
 
@@ -132,28 +132,28 @@ At startup and after an event, the diverter defaults away from the storage tank.
 
 ### 5. It is designed for calibration and expansion
 
-Roof area, rain-gauge resolution, turbidity calibration, servo angles, and thresholds are kept in `config.h`. The same architecture can later accept a real tipping-bucket gauge, a powered servo, data logging, or an ESP32 telemetry module.
+Roof area, rain-gauge resolution, turbidity calibration, servo angles, and thresholds are kept in `config.h`. The same architecture can later accept a real tipping-bucket gauge, data logging, or enabled ESP32-S3 Wi-Fi telemetry.
 
 ## Suggested faculty demonstration
 
 ### Before the demonstration
 
-1. Upload the firmware to the Arduino Uno.
+1. Upload the firmware to the ESP32-S3 DevKitC-compatible board.
 2. Open the Serial Monitor at **115200 baud**.
 3. Confirm that the green LED is on after reset.
-4. Keep the servo power wires disconnected if using the present wiring.
-5. Use a jumper to touch D2 to GND briefly whenever a rain tip is required.
+4. Power the servo from the external regulated 5 V supply and connect its ground to ESP32-S3 GND.
+5. Use a jumper to touch GPIO5 to GND briefly whenever a rain tip is required.
 
 ### Demonstration sequence
 
 1. **Introduce the problem:** explain roof contamination and why a fixed first-flush volume is unreliable.
-2. **Show the sensor inputs:** point out the D2 rain trigger, A0 turbidity input, and D7/D8 tank-level sensor.
-3. **Start a rain event:** touch D2 to GND. The Serial Monitor reports the stored dry-spell duration.
-4. **Explain intensity measurement:** produce slow or rapid D2 triggers to represent light or heavy rainfall.
+2. **Show the sensor inputs:** point out the GPIO5 rain trigger, GPIO4 turbidity input, and GPIO7/GPIO8 tank-level sensor.
+3. **Start a rain event:** touch GPIO5 to GND. The Serial Monitor reports the stored dry-spell duration.
+4. **Explain intensity measurement:** produce slow or rapid GPIO5 triggers to represent light or heavy rainfall.
 5. **Explain the adaptive calculation:** show the calculated intensity, multiplier, target volume, and target tips in the Serial Monitor.
 6. **Show the diversion state:** the red LED indicates that the first flush is still being rejected.
-7. **Show quality feedback:** present a clean or simulated clean analogue value at A0. The controller changes to storage after the target is reached.
-8. **Show tank protection:** place an object within approximately 10 cm of the HC-SR04. The red LED and D10 alert LED turn on.
+7. **Show quality feedback:** present a clean or simulated clean analogue value at GPIO4 through its divider. The controller changes to storage after the target is reached.
+8. **Show tank protection:** place an object within approximately 10 cm of the HC-SR04. The red LED and GPIO9 alert LED turn on.
 9. **Conclude with the key message:** the system uses prediction first and sensor feedback second, which is the central idea of adaptive automation.
 
 ## A concise presentation script
